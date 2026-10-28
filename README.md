@@ -127,4 +127,3 @@ npm test
 npm run build
 ```
 
-See [the 60-second demo script](docs/DEMO_SCRIPT.md) for a concise release demonstration.
