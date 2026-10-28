@@ -7,10 +7,24 @@
 }
 
 .haunted-canvas {
+  position: relative;
+  isolation: isolate;
   background:
     radial-gradient(circle at 10% 0%, rgb(139 92 246 / 16%), transparent 32rem),
     radial-gradient(circle at 100% 100%, rgb(45 212 191 / 8%), transparent 28rem),
     #100d16;
+}
+
+.haunted-static {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.055;
+  mix-blend-mode: screen;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.9'/%3E%3C/svg%3E");
+  background-size: 150px 150px;
+  animation: haunted-static 180ms steps(2, end) infinite;
 }
 
 .haunted-shell {
@@ -64,9 +78,18 @@
   75% { transform: translateX(100%); }
 }
 
+@keyframes haunted-static {
+  0% { background-position: 0 0; }
+  25% { background-position: 23px -17px; }
+  50% { background-position: -13px 29px; }
+  75% { background-position: 31px 11px; }
+  100% { background-position: -21px -25px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .haunted-shell::before,
-  .spectral-orb {
+  .spectral-orb,
+  .haunted-static {
     animation: none;
   }
 }

@@ -228,6 +228,7 @@ export function App() {
 
   return (
     <main className="haunted-canvas min-h-screen px-5 py-6 font-sans text-slate-100">
+      <div className="haunted-static" aria-hidden="true" />
       <section className="haunted-shell mx-auto max-w-3xl rounded-2xl border border-violet-400/30 bg-[#191423] p-6 shadow-2xl shadow-violet-950/30">
         <div className="flex items-start justify-between gap-4">
           <div>

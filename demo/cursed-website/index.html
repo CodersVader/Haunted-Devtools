@@ -26,8 +26,12 @@
         <button id="missing-spell" type="button">Cast a missing spell</button>
         <button id="corrupted-scroll" type="button">Read a corrupted scroll</button>
         <button id="silent-portal" type="button">Open the silent portal</button>
+        <button id="broken-map" type="button">Follow a broken map</button>
+        <button id="cursed-arithmetic" type="button">Divide the cursed ledger</button>
+        <button id="bad-address" type="button">Send a malformed request</button>
         <button id="open-all-doors" type="button">Open every door</button>
       </div>
+      <p><a href="/demo/react-cursed-app/">Try the React Cursed App →</a></p>
       <output id="result" aria-live="polite"></output>
     </main>
     <script>
@@ -37,6 +41,9 @@
       const missingSpell = document.querySelector('#missing-spell');
       const corruptedScroll = document.querySelector('#corrupted-scroll');
       const silentPortal = document.querySelector('#silent-portal');
+      const brokenMap = document.querySelector('#broken-map');
+      const cursedArithmetic = document.querySelector('#cursed-arithmetic');
+      const badAddress = document.querySelector('#bad-address');
       const openAllDoors = document.querySelector('#open-all-doors');
       const result = document.querySelector('#result');
 
@@ -82,12 +89,35 @@
         }
       });
 
+      brokenMap.addEventListener('click', () => {
+        result.textContent = 'The map points to a place that does not exist...';
+        setTimeout(() => {
+          const map = { rooms: [] };
+          map.rooms[3].treasure;
+        }, 0);
+      });
+
+      cursedArithmetic.addEventListener('click', () => {
+        result.textContent = 'The ledger has begun to loop forever...';
+        setTimeout(() => {
+          const recurse = () => recurse();
+          recurse();
+        }, 0);
+      });
+
+      badAddress.addEventListener('click', () => {
+        result.textContent = 'The address is not a valid route...';
+        setTimeout(() => fetch('http://[not-a-valid-host]'), 0);
+      });
+
       openAllDoors.addEventListener('click', () => {
         result.textContent = 'Every door is open. The queue should now awaken...';
         setTimeout(() => { const apparition = null; apparition.id; }, 0);
         setTimeout(() => phantomIncantation(), 20);
         setTimeout(() => JSON.parse('{ cursed: true,, }'), 40);
         setTimeout(() => Promise.reject(new Error('A second Promise escaped the séance.')), 60);
+        setTimeout(() => { const map = { rooms: [] }; map.rooms[3].treasure; }, 80);
+        setTimeout(() => fetch('http://[not-a-valid-host]'), 100);
         void knockOn('/definitely-missing-haunted-endpoint-two');
         void knockOn('/definitely-missing-haunted-endpoint-three');
       });
