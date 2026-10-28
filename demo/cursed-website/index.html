@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Cursed Website</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #110d18; color: #f4efff; }
+      body { display: grid; min-height: 100vh; place-items: center; margin: 0; }
+      main { max-width: 38rem; padding: 2.5rem; border: 1px solid #8b5cf680; border-radius: 1rem; background: #1e172a; }
+      p { color: #d5cbe8; line-height: 1.6; }
+      .doors { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
+      button { border: 0; border-radius: .6rem; padding: .8rem 1rem; color: #170e22; background: #c4b5fd; cursor: pointer; font-weight: 700; }
+      output { display: block; min-height: 1.5rem; margin-top: 1rem; color: #fda4af; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p>ENTER IF YOU DARE</p>
+      <h1>The Cursed Website</h1>
+      <p>Open Haunted DevTools, then choose a door to create a deterministic browser failure.</p>
+      <div class="doors">
+        <button id="vanishing-user" type="button">Meet the vanishing user</button>
+        <button id="forbidden-api" type="button">Knock on the forbidden API door</button>
+        <button id="lost-promise" type="button">Wake the lost Promise</button>
+        <button id="missing-spell" type="button">Cast a missing spell</button>
+        <button id="corrupted-scroll" type="button">Read a corrupted scroll</button>
+        <button id="silent-portal" type="button">Open the silent portal</button>
+        <button id="open-all-doors" type="button">Open every door</button>
+      </div>
+      <output id="result" aria-live="polite"></output>
+    </main>
+    <script>
+      const button = document.querySelector('#forbidden-api');
+      const vanishingUser = document.querySelector('#vanishing-user');
+      const lostPromise = document.querySelector('#lost-promise');
+      const missingSpell = document.querySelector('#missing-spell');
+      const corruptedScroll = document.querySelector('#corrupted-scroll');
+      const silentPortal = document.querySelector('#silent-portal');
+      const openAllDoors = document.querySelector('#open-all-doors');
+      const result = document.querySelector('#result');
+
+      const knockOn = async (path) => {
+        await fetch(path);
+      };
+
+      button.addEventListener('click', async () => {
+        result.textContent = 'Requesting the forbidden endpoint...';
+        const response = await fetch('/definitely-missing-haunted-endpoint');
+        result.textContent = `The door answered: HTTP ${response.status}.`;
+      });
+
+      vanishingUser.addEventListener('click', () => {
+        result.textContent = 'The user is about to vanish...';
+        setTimeout(() => {
+          const user = undefined;
+          user.name;
+        }, 0);
+      });
+
+      lostPromise.addEventListener('click', () => {
+        result.textContent = 'The Promise has left this realm...';
+        Promise.reject(new Error('The lost Promise was never handled.'));
+      });
+
+      missingSpell.addEventListener('click', () => {
+        result.textContent = 'The spellbook is missing a page...';
+        setTimeout(() => phantomIncantation(), 0);
+      });
+
+      corruptedScroll.addEventListener('click', () => {
+        result.textContent = 'The scroll is disintegrating...';
+        setTimeout(() => JSON.parse('{ this is definitely not valid JSON }'), 0);
+      });
+
+      silentPortal.addEventListener('click', async () => {
+        result.textContent = 'The portal refuses to answer...';
+        try {
+          await fetch('http://127.0.0.1:65534/silent-portal');
+        } catch {
+          result.textContent = 'The portal returned no response.';
+        }
+      });
+
+      openAllDoors.addEventListener('click', () => {
+        result.textContent = 'Every door is open. The queue should now awaken...';
+        setTimeout(() => { const apparition = null; apparition.id; }, 0);
+        setTimeout(() => phantomIncantation(), 20);
+        setTimeout(() => JSON.parse('{ cursed: true,, }'), 40);
+        setTimeout(() => Promise.reject(new Error('A second Promise escaped the séance.')), 60);
+        void knockOn('/definitely-missing-haunted-endpoint-two');
+        void knockOn('/definitely-missing-haunted-endpoint-three');
+      });
+    </script>
+  </body>
+</html>

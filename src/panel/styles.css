@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #100d16;
+}
+
+.haunted-canvas {
+  background:
+    radial-gradient(circle at 10% 0%, rgb(139 92 246 / 16%), transparent 32rem),
+    radial-gradient(circle at 100% 100%, rgb(45 212 191 / 8%), transparent 28rem),
+    #100d16;
+}
+
+.haunted-shell {
+  position: relative;
+  overflow: hidden;
+}
+
+.haunted-shell::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  opacity: 0.22;
+  background-image: linear-gradient(120deg, transparent 42%, rgb(196 181 253 / 20%), transparent 58%);
+  transform: translateX(-100%);
+  animation: haunted-drift 14s ease-in-out infinite;
+}
+
+.spectral-orb {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: #c4b5fd;
+  box-shadow: 0 0 0.8rem #a78bfa, 0 0 1.6rem rgb(167 139 250 / 55%);
+  animation: spectral-pulse 2.8s ease-in-out infinite;
+}
+
+.haunted-empty {
+  background: linear-gradient(135deg, rgb(139 92 246 / 8%), transparent 62%);
+}
+
+.haunted-selected {
+  box-shadow: 0 0 1.5rem rgb(139 92 246 / 16%), inset 0 0 1.4rem rgb(139 92 246 / 5%);
+}
+
+.summon-button:not(:disabled) {
+  box-shadow: 0 0 1rem rgb(196 181 253 / 32%);
+}
+
+.summon-button:not(:disabled):hover {
+  box-shadow: 0 0 1.6rem rgb(196 181 253 / 50%);
+}
+
+@keyframes spectral-pulse {
+  0%, 100% { opacity: 0.65; transform: scale(0.88); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+@keyframes haunted-drift {
+  0%, 55%, 100% { transform: translateX(-100%); }
+  75% { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .haunted-shell::before,
+  .spectral-orb {
+    animation: none;
+  }
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
