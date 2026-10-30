@@ -49,7 +49,7 @@ For `localhost`, `127.0.0.1`, and IPv6 loopback pages, Haunted DevTools asks you
 ## Run from a clean checkout
 
 ```bash
-git clone <your-repository-url>
+git clone https://github.com/CodersVader/Haunted-Devtools.git
 cd Haunted-Devtools
 npm ci
 npm run build
@@ -123,7 +123,7 @@ Each lab is deterministic and works offline after Node dependencies and any sele
 
 ## Demo previews
 
-The existing screenshots show the demo pages. Add panel screenshots when you want the README to demonstrate the Live feed and archive flows described above.
+The demo pages below give contributors deterministic ways to generate errors. A capture of the actual DevTools panel is still pending; the recorded walkthrough shows the panel flow in the meantime.
 
 ![The static Cursed Website demo](docs/screenshots/cursed-website.png)
 
@@ -132,6 +132,12 @@ The existing screenshots show the demo pages. Add panel screenshots when you wan
 ## Product walkthrough
 
 [Watch the recorded walkthrough: trigger an error, inspect its local diagnosis, and follow the original panel flow.](docs/media/haunted-devtools-demo.mp4)
+
+## Why local, open-weight AI
+
+Haunted DevTools uses Ollama and a locally installed open-weight model for its diagnosis workflow. The model receives only the event fields described in the privacy boundary below and responds on the same machine; it does not require an API key, a hosted AI account, or an internet connection after the model has been installed. This makes the AI feature appropriate for debugging applications whose failures may contain sensitive implementation details.
+
+The extension remains useful as a local incident inbox when no model is running. Start an installed Ollama model to enable automatic diagnoses for new incident groups.
 
 ## Privacy boundary
 
@@ -149,6 +155,12 @@ Haunted DevTools is designed to be local-first:
 - Chrome's own console output is not mirrored line-for-line; the extension captures browser runtime errors and unhandled rejections through a main-world bridge.
 - The extension must be reloaded after rebuilding, and the inspected page may need a refresh after an extension reload so content scripts attach again.
 - Local diagnosis quality and speed depend on the selected model and available local hardware.
+- A panel screenshot for the README is pending; use the recorded walkthrough to see the current panel experience.
+
+## Release checklist
+
+- [ ] **Pending:** Add a top-level `LICENSE` file after the project owner confirms the intended license text.
+- [ ] **Pending:** Add a current screenshot of the Live feed and archived case-file views.
 
 ## Verification
 

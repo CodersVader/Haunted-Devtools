@@ -241,9 +241,3 @@ async function broadcastRegistryState(target?: chrome.runtime.Port): Promise<voi
 
 function broadcast(message: PanelMessage): void { for (const port of panelPorts) postToPanel(port, message); }
 function postToPanel(port: chrome.runtime.Port, message: PanelMessage): void { try { port.postMessage(message); } catch { panelPorts.delete(port); } }
-
-function replaceOrPrepend(events: DebugEvent[], event: DebugEvent): DebugEvent[] {
-  const index = events.findIndex((current) => current.id === event.id);
-  if (index === -1) return [event, ...events];
-  return events.map((current) => current.id === event.id ? event : current);
-}
