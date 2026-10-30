@@ -1,15 +1,44 @@
 # Haunted DevTools
 
-Haunted DevTools is a local-first Chrome DevTools extension that collects browser failures and asks a locally running Ollama model to explain them in a chosen ghost persona. Event data stays between Chrome and `127.0.0.1` unless you deliberately change the source.
+Haunted DevTools is a local-first Chrome DevTools extension for investigating browser failures without sending debugging data to a hosted service. It captures failures in the inspected page, groups them into stable incident fingerprints, and can ask a locally running Ollama model for a diagnosis in a chosen ghost persona.
+
+The extension separates immediate debugging from long-term history: **Live feed** shows what is happening in the current DevTools visit, while **Haunted websites** is the persistent archive of errors you have explicitly marked as fixed.
 
 ## What it detects
 
 - Uncaught JavaScript runtime errors.
 - Unhandled Promise rejections.
 - Failed HTTP requests seen by Chrome DevTools: `4xx`, `5xx`, and requests with no response.
-- Repeated incidents are grouped by a stable fingerprint, with their occurrence count preserved.
+- Repeated incidents are grouped by a stable fingerprint. Runtime fingerprints use the error type, sanitized message, and source location; network fingerprints use method, sanitized endpoint, and status.
+
+## How the workflow works
+
+1. Open DevTools and select **Haunted DevTools**. The default **Live feed** starts capturing incidents for the inspected tab.
+2. The first sighting of a fingerprint creates one live parent group. Repeats become `×2`, `×3`, and so on inside that group instead of creating duplicate cards.
+3. When a local model is active, a new group is diagnosed once. The panel shows a separate diagnosis state: awaiting, queued, reading, diagnosed, or failed.
+4. Choose **Mark exorcised** after you have attempted a fix. That removes the group from Live feed and commits its diagnosis and lifecycle history to the website archive.
+5. If an archived fingerprint appears again later, Live feed looks it up first. It immediately shows **Resurrected** and reuses the saved diagnosis without another Ollama request.
+6. Exorcise the returned error again to complete the next resurrection/exorcism cycle. Archive counts represent these completed cycles—not noisy page-refresh sightings.
+
+## Live feed and archive
+
+### Live feed
+
+- Shows only grouped errors captured during the current DevTools visit for the inspected site.
+- Uses a horizontal incident rail and one focused case-file pane, so a busy page does not turn into a long vertical stack.
+- Shows lifecycle status (**Active** or **Resurrected**) separately from diagnosis status.
+- Keeps all unexorcised errors in memory only. Closing the DevTools session discards them.
+
+### Haunted websites
+
+- Opens a guided archive: website list → grouped exorcised errors → full case file.
+- Lets you browse saved sites without changing the active live capture target.
+- Stores the diagnosis, first/last seen timestamps, exorcism time, and resurrection-cycle count for each archived fingerprint.
+- Lets you move back up the hierarchy at any point; entering another website closes the lower archive context.
 
 The incident inbox automatically queues diagnoses one at a time while a local model is active. This prevents a burst of errors from overwhelming Ollama.
+
+For `localhost`, `127.0.0.1`, and IPv6 loopback pages, Haunted DevTools asks you to select or create a local project when DevTools attaches. That choice lasts only for the inspected tab, so a different app later served from the same local URL cannot inherit the wrong history. **Clear site** removes one website’s archived errors and diagnoses; **Clear all** also removes saved local-project labels.
 
 ## Prerequisites
 
@@ -94,26 +123,29 @@ Each lab is deterministic and works offline after Node dependencies and any sele
 
 ## Demo previews
 
+The existing screenshots show the demo pages. Add panel screenshots when you want the README to demonstrate the Live feed and archive flows described above.
+
 ![The static Cursed Website demo](docs/screenshots/cursed-website.png)
 
 ![The React Cursed App demo](docs/screenshots/react-cursed-app.png)
 
 ## Product walkthrough
 
-[Watch the recorded walkthrough: trigger one error, select the encountered incident, and read the complete local explanation.](docs/media/haunted-devtools-demo.mp4)
+[Watch the recorded walkthrough: trigger an error, inspect its local diagnosis, and follow the original panel flow.](docs/media/haunted-devtools-demo.mp4)
 
 ## Privacy boundary
 
 Haunted DevTools is designed to be local-first:
 
-- Runtime and network metadata are collected in the inspected browser session.
-- Sanitized event details are sent only to the Ollama API at `127.0.0.1:11434` when you start a model.
+- Live incident groups remain in the DevTools session until you exorcise them or close DevTools.
+- Exorcised incident groups and their diagnoses are stored in Chrome extension local storage on this device until you clear them.
+- Sanitized event details are sent only to the Ollama API at `127.0.0.1:11434` for a new, undiagnosed fingerprint while a local model is active.
 - No hosted AI endpoint, telemetry endpoint, or analytics SDK is used.
 - The extension does not send request bodies, response bodies, cookies, authorization headers, or local storage values to Ollama.
 
 ## Known limitations
 
-- Chrome does not expose an extension API to clear the native Console or Network panels. **Clear session** only clears Haunted DevTools' captured incidents and diagnosis queue.
+- Chrome does not expose an extension API to clear the native Console or Network panels. Haunted DevTools clears only its own archive; Live feed is scoped to the current DevTools visit.
 - Chrome's own console output is not mirrored line-for-line; the extension captures browser runtime errors and unhandled rejections through a main-world bridge.
 - The extension must be reloaded after rebuilding, and the inspected page may need a refresh after an extension reload so content scripts attach again.
 - Local diagnosis quality and speed depend on the selected model and available local hardware.

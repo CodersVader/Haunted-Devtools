@@ -3,8 +3,9 @@ import { defaultModelId, modelSelectionStorageKey, supportedModels, type ModelCo
 import { diagnoseEvent, listInstalledModelNames, listLoadedModelNames, startModel, stopModel } from "../ai/ollama";
 import type { DiagnosisResult } from "../ai/diagnosis";
 import { decorateGhostCommentary, ghostPersonalities, ghostPersonalityStorageKey, type GhostPersonality } from "./personality";
-import { type DebugEvent } from "../shared/events";
+import { type DebugEvent, type IncidentStatus } from "../shared/events";
 import { isPanelMessage, panelPortName } from "../shared/messaging";
+import type { RegistrySite } from "../shared/registry";
 
 function replaceOrPrepend(events: DebugEvent[], event: DebugEvent): DebugEvent[] {
   const index = events.findIndex((current) => current.id === event.id);
@@ -24,6 +25,21 @@ type DiagnosisViewState = {
 };
 
 type IncidentState = "new" | "queued" | "reading" | "diagnosed" | "failed";
+
+function lifecycleState(event: DebugEvent): IncidentStatus {
+  return event.incidentStatus ?? "active";
+}
+
+function lifecycleLabel(event: DebugEvent): string {
+  if (lifecycleState(event) === "resurrected") return `Resurrected ×${event.resurrectionCount ?? 0}`;
+  return lifecycleState(event);
+}
+
+const lifecycleClass: Record<IncidentStatus, string> = {
+  active: "bg-rose-300/10 text-rose-100",
+  exorcised: "bg-emerald-300/10 text-emerald-100",
+  resurrected: "bg-amber-300/10 text-amber-100",
+};
 
 function incidentState(event: DebugEvent, diagnosis: DiagnosisViewState | undefined, queue: DebugEvent[]): IncidentState {
   if (diagnosis?.status === "ready") return "diagnosed";
@@ -47,6 +63,14 @@ const incidentStateClass: Record<IncidentState, string> = {
   failed: "bg-rose-300/10 text-rose-100",
 };
 
+const diagnosisStateLabel: Record<IncidentState, string> = {
+  new: "Awaiting diagnosis",
+  queued: "Queued",
+  reading: "Reading",
+  diagnosed: "Diagnosed",
+  failed: "Diagnosis failed",
+};
+
 function addToQueue(queue: DebugEvent[], event: DebugEvent): DebugEvent[] {
   const existing = queue.findIndex((item) => item.id === event.id);
   if (existing === -1) return [...queue, event];
@@ -54,7 +78,15 @@ function addToQueue(queue: DebugEvent[], event: DebugEvent): DebugEvent[] {
 }
 
 export function App() {
-  const [events, setEvents] = useState<DebugEvent[]>([]);
+  const [archiveEvents, setArchiveEvents] = useState<DebugEvent[]>([]);
+  const [liveEvents, setLiveEvents] = useState<DebugEvent[]>([]);
+  const [viewMode, setViewMode] = useState<"live" | "archive">("live");
+  const [archiveStep, setArchiveStep] = useState<"sites" | "groups" | "case">("sites");
+  const [sites, setSites] = useState<RegistrySite[]>([]);
+  const [activeCaptureSite, setActiveCaptureSite] = useState<RegistrySite | null>(null);
+  const [viewedSite, setViewedSite] = useState<RegistrySite | null>(null);
+  const [localProjectOrigin, setLocalProjectOrigin] = useState<string | undefined>();
+  const [localProjectLabel, setLocalProjectLabel] = useState("");
   const panelPortRef = useRef<chrome.runtime.Port | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(true);
@@ -75,25 +107,38 @@ export function App() {
   const [personality, setPersonality] = useState<GhostPersonality>("spooky");
   const modelActiveRef = useRef(false);
   const diagnosedEventIdsRef = useRef(new Set<string>());
+  const activeCaptureSiteIdRef = useRef<string | null>(null);
+  const viewedSiteIdRef = useRef<string | null>(null);
+  const viewModeRef = useRef<"live" | "archive">("live");
 
   useEffect(() => {
     const port = window.chrome.runtime.connect({ name: panelPortName });
     panelPortRef.current = port;
     port.onMessage.addListener((message: unknown) => {
       if (!isPanelMessage(message)) return;
-      if (message.type === "session-events") {
-        setEvents(message.events);
-        setSelectedEventId((selected) => (message.events.some((event) => event.id === selected) ? selected : (message.events[0]?.id ?? null)));
-        if (message.events.length === 0) {
-          setDiagnoses({});
-          setDiagnosisQueue([]);
-          diagnosedEventIdsRef.current.clear();
-        }
+      if (message.type === "registry-state") {
+        setArchiveEvents(message.events);
+        setLiveEvents(message.liveEvents);
+        setSites(message.sites);
+        setActiveCaptureSite(message.activeCaptureSite);
+        setViewedSite(message.viewedSite);
+        activeCaptureSiteIdRef.current = message.activeCaptureSite?.id ?? null;
+        viewedSiteIdRef.current = message.viewedSite?.id ?? null;
+        setLocalProjectOrigin(message.localProjectOrigin);
+        const visibleEvents = viewModeRef.current === "live" ? message.liveEvents : message.events;
+        setSelectedEventId((selected) => (visibleEvents.some((event) => event.id === selected) ? selected : (visibleEvents[0]?.id ?? null)));
+        const restored = Object.fromEntries([...message.events, ...message.liveEvents].flatMap((event) => event.diagnosis ? [[event.id, { eventId: event.id, status: event.diagnosis.status, result: event.diagnosis.result, error: event.diagnosis.error } satisfies DiagnosisViewState]] : []));
+        setDiagnoses(restored);
+        setDiagnosisQueue([]);
+        diagnosedEventIdsRef.current = new Set([...message.events, ...message.liveEvents].filter((event) => !!event.diagnosis).map((event) => event.id));
       }
       if (message.type === "event-detected") {
-        setEvents((current) => replaceOrPrepend(current, message.event));
-        setSelectedEventId(message.event.id);
-        if (modelActiveRef.current && !diagnosedEventIdsRef.current.has(message.event.id)) setDiagnosisQueue((queue) => addToQueue(queue, message.event));
+        if (message.siteId === activeCaptureSiteIdRef.current) setLiveEvents((current) => replaceOrPrepend(current, message.event));
+        if (message.siteId === viewedSiteIdRef.current) setArchiveEvents((current) => replaceOrPrepend(current, message.event));
+        if (viewModeRef.current === "live" && message.siteId === activeCaptureSiteIdRef.current) setSelectedEventId(message.event.id);
+        if (viewModeRef.current === "archive" && message.siteId === viewedSiteIdRef.current) setSelectedEventId(message.event.id);
+        if (message.event.diagnosis) setDiagnoses((current) => ({ ...current, [message.event.id]: { eventId: message.event.id, status: message.event.diagnosis!.status, result: message.event.diagnosis!.result, error: message.event.diagnosis!.error } }));
+        if (message.isNew && modelActiveRef.current && !message.event.diagnosis && !diagnosedEventIdsRef.current.has(message.event.id)) setDiagnosisQueue((queue) => addToQueue(queue, message.event));
       }
       if (message.type === "runtime-bridge-status") setRuntimeBridge(message);
     });
@@ -116,6 +161,7 @@ export function App() {
     })();
   }, []);
 
+  const events = viewMode === "live" ? liveEvents : archiveEvents;
   const selectedEvent = events.find((event) => event.id === selectedEventId) ?? events[0] ?? null;
   const selectedModel = supportedModels.find((model) => model.id === selectedModelId)!;
   const selectedModelInstalled = installedModels.has(selectedModelId);
@@ -141,10 +187,13 @@ export function App() {
         .then((result) => {
           diagnosedEventIdsRef.current.add(event.id);
           setDiagnoses((current) => ({ ...current, [event.id]: { eventId: event.id, status: "ready", result } }));
+          if (activeCaptureSite) panelPortRef.current?.postMessage({ type: "save-diagnosis", siteId: activeCaptureSite.id, eventId: event.id, diagnosis: { status: "ready", result, updatedAt: Date.now() } });
         })
         .catch((error: unknown) => {
           diagnosedEventIdsRef.current.add(event.id);
-          setDiagnoses((current) => ({ ...current, [event.id]: { eventId: event.id, status: "error", error: error instanceof Error ? error.message : "The local model could not create a diagnosis." } }));
+          const message = error instanceof Error ? error.message : "The local model could not create a diagnosis.";
+          setDiagnoses((current) => ({ ...current, [event.id]: { eventId: event.id, status: "error", error: message } }));
+          if (activeCaptureSite) panelPortRef.current?.postMessage({ type: "save-diagnosis", siteId: activeCaptureSite.id, eventId: event.id, diagnosis: { status: "error", error: message, updatedAt: Date.now() } });
         })
         .finally(() => {
           setDiagnosisQueue((queue) => queue.filter((queuedEvent) => queuedEvent.id !== event.id));
@@ -152,13 +201,47 @@ export function App() {
         });
     }, 0);
     return () => globalThis.clearTimeout(timer);
-  }, [diagnosisQueue, isDiagnosing, modelIsActive, personality, selectedModel]);
+  }, [activeCaptureSite, diagnosisQueue, isDiagnosing, modelIsActive, personality, selectedModel]);
 
-  function clearSession(): void {
-    panelPortRef.current?.postMessage({ type: "clear-session" });
-    setDiagnoses({});
-    setDiagnosisQueue([]);
-    diagnosedEventIdsRef.current.clear();
+  function clearSite(): void {
+    if (!viewedSite || !window.confirm(`Clear every saved error for ${viewedSite.label}?`)) return;
+    panelPortRef.current?.postMessage({ type: "clear-site", siteId: viewedSite.id });
+  }
+
+  function clearAll(): void {
+    if (!window.confirm("Clear all saved sites, local project labels, errors, and diagnoses?")) return;
+    panelPortRef.current?.postMessage({ type: "clear-all" });
+  }
+
+  function createLocalProject(): void {
+    const label = localProjectLabel.trim();
+    if (!label) return;
+    panelPortRef.current?.postMessage({ type: "create-local-project", label });
+    setLocalProjectLabel("");
+  }
+
+  function markExorcised(): void {
+    const site = viewMode === "live" ? activeCaptureSite : viewedSite;
+    if (!site || !selectedEvent || lifecycleState(selectedEvent) === "exorcised") return;
+    panelPortRef.current?.postMessage({ type: "mark-exorcised", siteId: site.id, eventId: selectedEvent.id });
+  }
+
+  function openLiveFeed(): void {
+    setViewMode("live");
+    viewModeRef.current = "live";
+    setSelectedEventId(liveEvents[0]?.id ?? null);
+  }
+
+  function openArchive(): void {
+    setViewMode("archive");
+    viewModeRef.current = "archive";
+    setArchiveStep("sites");
+    setSelectedEventId(null);
+  }
+
+  function openArchiveSite(siteId: string): void {
+    panelPortRef.current?.postMessage({ type: "select-site", siteId });
+    setArchiveStep("groups");
   }
 
   async function copySuggestedFix(value: string): Promise<void> {
@@ -209,7 +292,6 @@ export function App() {
         setActiveModelId(selectedModelId);
         panelPortRef.current?.postMessage({ type: "set-active-model", model: selectedModelId });
         setModelMenuOpen(false);
-        setDiagnosisQueue((queue) => events.reduce((next, event) => diagnosedEventIdsRef.current.has(event.id) ? next : addToQueue(next, event), queue));
       } else {
         await stopModel(selectedModelId);
         setActiveModelId(null);
@@ -245,20 +327,30 @@ export function App() {
           </div>
         </div>
 
+        <nav className="mt-5 flex gap-2 border-b border-white/10 pb-3" aria-label="Haunted DevTools views">
+          <button type="button" onClick={openLiveFeed} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${viewMode === "live" ? "bg-violet-300 text-violet-950" : "text-violet-100 ring-1 ring-inset ring-violet-300/25 hover:bg-violet-300/10"}`}>Live feed</button>
+          <button type="button" onClick={openArchive} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${viewMode === "archive" ? "bg-violet-300 text-violet-950" : "text-violet-100 ring-1 ring-inset ring-violet-300/25 hover:bg-violet-300/10"}`}>Haunted websites</button>
+        </nav>
+
         <div className="mt-6 rounded-xl border border-white/10 bg-black/20 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium text-slate-200">Incident queue</p>
-              <p className="mt-1 text-xs text-slate-400">{events.length} grouped {events.length === 1 ? "anomaly" : "anomalies"} in this séance</p>
+              <p className="text-sm font-medium text-slate-200">{viewMode === "live" ? "Live feed" : "Haunted website archive"}</p>
+              <p className="mt-1 text-xs text-slate-400">{viewMode === "live" ? `${liveEvents.length} grouped ${liveEvents.length === 1 ? "anomaly" : "anomalies"} captured for this visit` : viewedSite ? `${archiveEvents.length} grouped ${archiveEvents.length === 1 ? "anomaly" : "anomalies"} for ${viewedSite.label}` : "Choose a saved website to inspect its history."}</p>
             </div>
-            <button
-              type="button"
-              onClick={clearSession}
-              disabled={events.length === 0}
-              className="rounded-md px-2 py-1 text-xs font-medium text-slate-300 ring-1 ring-inset ring-white/15 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Clear session
-            </button>
+            {viewMode === "archive" && <div className="flex gap-2">
+              <button type="button" onClick={clearSite} disabled={!viewedSite || events.length === 0} className="rounded-md px-2 py-1 text-xs font-medium text-slate-300 ring-1 ring-inset ring-white/15 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40">Clear site</button>
+              <button type="button" onClick={clearAll} disabled={sites.length === 0} className="rounded-md px-2 py-1 text-xs font-medium text-rose-200 ring-1 ring-inset ring-rose-300/25 hover:bg-rose-300/10 disabled:cursor-not-allowed disabled:opacity-40">Clear all</button>
+            </div>}
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {viewMode === "archive" ? <label className="text-xs text-slate-400" htmlFor="registry-site">Viewing saved site
+              <select id="registry-site" value={viewedSite?.id ?? ""} onChange={(event) => { panelPortRef.current?.postMessage({ type: "select-site", siteId: event.target.value }); setArchiveStep("groups"); }} className="mt-1 w-full rounded-md border border-white/15 bg-[#100d16] px-2 py-1.5 text-xs text-slate-100">
+                <option value="" disabled>Select a saved site</option>
+                {sites.map((site) => <option key={site.id} value={site.id}>{site.kind === "local-project" ? `Local · ${site.label}` : site.label}</option>)}
+              </select>
+            </label> : <div className="pt-1 text-xs text-slate-400"><p>Current inspected site</p><p className="mt-1 break-all text-violet-100">{activeCaptureSite ? activeCaptureSite.label : localProjectOrigin ? `Choose a local project for ${localProjectOrigin}` : "Unavailable for this page"}</p></div>}
+            <div className="pt-1 text-xs text-slate-400"><p>{viewMode === "live" ? "Feed scope" : "Recording"}</p><p className="mt-1 break-all text-violet-100">{viewMode === "live" ? "This DevTools visit" : activeCaptureSite ? activeCaptureSite.label : "Unavailable"}</p></div>
           </div>
           <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5" aria-label="Incident queue summary">
             {(["new", "queued", "reading", "diagnosed", "failed"] as const).map((state) => (
@@ -270,6 +362,13 @@ export function App() {
           </div>
           {modelIsActive && (isDiagnosing || diagnosisQueue.length > 0) && <p className="mt-2 text-xs text-violet-200">The séance is reading {isDiagnosing ? "one trace" : "the next trace"}{diagnosisQueue.length > 1 ? ` · ${diagnosisQueue.length - 1} waiting` : ""}.</p>}
         </div>
+
+        {localProjectOrigin && !activeCaptureSite && <section className="mt-4 rounded-xl border border-amber-300/25 bg-amber-400/5 p-4" aria-label="Choose local project">
+          <p className="text-sm font-medium text-amber-100">Name this local project before recording</p>
+          <p className="mt-1 text-xs text-slate-400">This choice belongs only to the current DevTools attachment, so a different app at the same localhost URL cannot inherit its history.</p>
+          {sites.filter((site) => site.kind === "local-project" && site.origin === localProjectOrigin).length > 0 && <div className="mt-3 flex flex-wrap gap-2">{sites.filter((site) => site.kind === "local-project" && site.origin === localProjectOrigin).map((site) => <button key={site.id} type="button" onClick={() => panelPortRef.current?.postMessage({ type: "select-local-project", siteId: site.id })} className="rounded-md px-2 py-1 text-xs text-amber-100 ring-1 ring-inset ring-amber-300/25 hover:bg-amber-300/10">Use {site.label}</button>)}</div>}
+          <div className="mt-3 flex gap-2"><input value={localProjectLabel} onChange={(event) => setLocalProjectLabel(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") createLocalProject(); }} placeholder="Project name" className="min-w-0 flex-1 rounded-md border border-white/15 bg-[#100d16] px-2 py-1.5 text-xs text-slate-100" /><button type="button" onClick={createLocalProject} className="rounded-md bg-amber-200 px-3 py-1.5 text-xs font-semibold text-amber-950">Create</button></div>
+        </section>}
 
         {runtimeBridge.status !== "attached" && <p className="mt-3 text-xs text-amber-200">Runtime capture unavailable: {runtimeBridge.detail ?? "reload the inspected page."}</p>}
 
@@ -315,35 +414,41 @@ export function App() {
           {modelNotice && <p className="mt-3 text-xs text-slate-300">{modelNotice}</p>}
         </section>}
 
-        {events.length === 0 ? (
+        {viewMode === "archive" && archiveStep === "sites" ? (
+          <section className="mt-4" aria-label="Haunted websites">
+            <div className="mb-2 flex items-center justify-between"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-200">Haunted websites</p><p className="text-xs text-slate-500">Choose a registry</p></div>
+            <ol className="space-y-2">{sites.map((site) => <li key={site.id}><button type="button" onClick={() => openArchiveSite(site.id)} className="w-full rounded-xl border border-white/10 bg-black/15 p-3 text-left hover:bg-white/5"><div className="flex items-center justify-between gap-3"><p className="truncate text-sm font-medium text-slate-100">{site.kind === "local-project" ? `Local · ${site.label}` : site.label}</p><span className="text-xs text-violet-200">Enter ›</span></div><p className="mt-1 text-xs text-slate-400">Last activity {new Date(site.updatedAt).toLocaleString()}</p></button></li>)}</ol>
+          </section>
+        ) : events.length === 0 ? (
           <div className="haunted-empty mt-4 rounded-xl border border-dashed border-violet-300/25 px-4 py-6 text-sm text-slate-300">
             <p className="text-base font-medium text-violet-100">The room is quiet… for now.</p>
             <p className="mt-2 text-xs leading-5 text-slate-400">Trigger a runtime error, rejected Promise, or failed HTTP request and its trace will appear here.</p>
           </div>
         ) : (
-          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-            <section className="min-w-0" aria-label="Incident inbox">
+          <div className={`mt-4 grid gap-4 ${viewMode === "live" ? "" : "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]"}`}>
+            {!(viewMode === "archive" && archiveStep === "case") && <section className="min-w-0" aria-label="Incident inbox">
               <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-200">Active hauntings</p>
-                <p className="text-xs text-slate-500">Newest first</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-200">{viewMode === "live" ? "Live hauntings" : "Grouped hauntings"}</p>
+                {viewMode === "archive" && archiveStep === "groups" && <button type="button" onClick={() => setArchiveStep("sites")} className="text-xs text-violet-200 hover:text-violet-100">All websites</button>}
+                {viewMode === "live" && <p className="text-xs text-slate-500">Swipe to inspect</p>}
               </div>
-            <ol className="space-y-2" aria-label="Detected anomalies">
+            <ol className={viewMode === "live" ? "flex gap-2 overflow-x-auto pb-2" : "space-y-2"} aria-label="Detected anomalies">
               {events.map((event) => (
-                <li key={event.id}>
+                <li key={event.id} className={viewMode === "live" ? "w-64 shrink-0" : ""}>
                   {(() => {
                     const state = incidentState(event, diagnoses[event.id], diagnosisQueue);
                     return (
                   <button
                     type="button"
-                    onClick={() => setSelectedEventId(event.id)}
+                    onClick={() => { setSelectedEventId(event.id); if (viewMode === "archive") setArchiveStep("case"); }}
                     className={`w-full rounded-xl border p-3 text-left transition ${selectedEvent?.id === event.id ? "haunted-selected border-violet-300/60 bg-violet-400/10" : "border-white/10 bg-black/15 hover:bg-white/5"}`}
                   >
                     <div className="flex items-center justify-between gap-3">
                       <p className="truncate text-sm font-medium text-slate-100">{event.title}</p>
-                      <span className={`rounded-full px-2 py-1 text-[11px] font-medium capitalize ${incidentStateClass[state]}`}>{state}</span>
+                      <span className="flex shrink-0 items-center gap-1"><span className={`rounded-full px-2 py-1 text-[11px] font-medium capitalize ${lifecycleClass[lifecycleState(event)]}`}>{lifecycleLabel(event)}</span><span className={`rounded-full px-2 py-1 text-[11px] font-medium ${incidentStateClass[state]}`}>{diagnosisStateLabel[state]}</span></span>
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-3 text-xs text-slate-400">
-                      <p className="truncate capitalize">{eventLabel(event.type)} · {incidentSource(event)}{event.occurrences > 1 ? ` · ×${event.occurrences}` : ""}</p>
+                      <p className="truncate capitalize">{eventLabel(event.type)} · {incidentSource(event)}{viewMode === "live" && event.occurrences > 1 ? ` · ×${event.occurrences}` : ""}</p>
                       <time className="shrink-0" dateTime={new Date(event.timestamp).toISOString()}>{new Date(event.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
                     </div>
                   </button>
@@ -352,18 +457,22 @@ export function App() {
                 </li>
               ))}
             </ol>
-            </section>
+            </section>}
 
             {selectedEvent && (
               <article className="rounded-xl border border-rose-300/20 bg-rose-400/5 p-4" aria-label="Selected anomaly details">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-rose-200">Case file · {eventLabel(selectedEvent.type)}</p>
+                    {viewMode === "archive" && <button type="button" onClick={() => setArchiveStep("groups")} className="mb-3 text-xs text-violet-200 hover:text-violet-100">‹ {viewedSite?.label ?? "Error groups"}</button>}
+                    <p className="text-xs font-semibold uppercase tracking-wide text-rose-200">Case file · {eventLabel(selectedEvent.type)} · {lifecycleLabel(selectedEvent)}</p>
                     <h2 className="mt-1 font-semibold text-rose-50">{selectedEvent.title}</h2>
                   </div>
                   <span className="rounded-full bg-rose-300/10 px-2 py-1 text-xs font-medium capitalize text-rose-100">{selectedEvent.severity}</span>
                 </div>
                 <p className="mt-4 break-all rounded-lg bg-black/20 p-3 font-mono text-xs leading-5 text-slate-200">{selectedEvent.message}</p>
+                <p className="mt-3 text-xs text-slate-400">First seen {new Date(selectedEvent.firstSeenAt ?? selectedEvent.timestamp).toLocaleString()} · Last seen {new Date(selectedEvent.lastSeenAt ?? selectedEvent.timestamp).toLocaleString()}</p>
+                {selectedEvent.exorcisedAt && <p className="mt-1 text-xs text-emerald-200">Exorcised {new Date(selectedEvent.exorcisedAt).toLocaleString()}</p>}
+                {selectedEvent.resurrectedAt && <p className="mt-1 text-xs text-amber-200">Resurrected {new Date(selectedEvent.resurrectedAt).toLocaleString()} · ×{selectedEvent.resurrectionCount ?? 0}</p>}
                 {selectedEvent.request && (
                   <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-xs">
                     <dt className="text-slate-400">Request</dt>
@@ -376,6 +485,8 @@ export function App() {
                   <p className="mt-4 break-all font-mono text-xs text-slate-400">{selectedEvent.source.url}{selectedEvent.source.line ? `:${selectedEvent.source.line}${selectedEvent.source.column ? `:${selectedEvent.source.column}` : ""}` : ""}</p>
                 )}
                 <div className="mt-4 flex flex-wrap items-center gap-2">
+                  {lifecycleState(selectedEvent) !== "exorcised" && <button type="button" onClick={markExorcised} className="rounded-md bg-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-950">Mark exorcised</button>}
+                  {lifecycleState(selectedEvent) === "exorcised" && <span className="text-xs text-emerald-200">This ghost is exorcised. A future match will be marked resurrected.</span>}
                   {!modelIsActive && <span className="text-xs text-slate-400">Start the selected local model to awaken automatic diagnoses.</span>}
                   {modelIsActive && selectedDiagnosis?.status === "loading" && <span className="summon-button rounded-md bg-violet-300 px-3 py-1.5 text-xs font-semibold text-violet-950">{selectedPersonality.label} ghost is reading this trace…</span>}
                   {modelIsActive && !selectedDiagnosis && diagnosisQueue.some((event) => event.id === selectedEvent.id) && <span className="text-xs text-violet-200">Queued for a {selectedPersonality.label.toLowerCase()} reading.</span>}

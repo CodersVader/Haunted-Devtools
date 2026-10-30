@@ -1,3 +1,7 @@
+import type { RegistryResponse } from "../shared/registry-messaging";
+import { isRegistryCommand } from "../shared/registry-messaging";
+import { clearAll, clearSite, commitExorcised, createLocalProject, emptyRegistry, ensureWebsite, findArchivedEvent, listEvents, markExorcised, parseRegistry, registryStorageKey, saveDiagnosis, upsertEvent } from "../shared/registry";
+
 const devtoolsRuntimePortName = "haunted-devtools-runtime";
 
 type RuntimeMessage =
@@ -63,6 +67,7 @@ async function installRuntimeBridge(tabId: number): Promise<void> {
 }
 
 chrome.runtime.onMessage.addListener((message: unknown, sender) => {
+  if (isRegistryCommand(message)) return;
   const tabId = sender.tab?.id;
   if (tabId === undefined || !isRuntimeMessage(message)) return;
 
@@ -74,6 +79,63 @@ chrome.runtime.onMessage.addListener((message: unknown, sender) => {
     }
   }
 });
+
+// Chrome's callback listener requires the response callback to keep the service worker alive.
+// Kept separate from runtime bridge messages so page-originated events cannot mutate the registry.
+chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+  if (!isRegistryCommand(message)) return;
+  void handleRegistryCommand(message).then(sendResponse);
+  return true;
+});
+
+let registryWrite = Promise.resolve();
+
+async function withRegistry<T>(operation: (registry: ReturnType<typeof parseRegistry>) => T | Promise<T>, write = false): Promise<T> {
+  let result!: T;
+  const run = async (): Promise<void> => {
+    const stored = await chrome.storage.local.get(registryStorageKey);
+    const registry = parseRegistry(stored[registryStorageKey] ?? emptyRegistry());
+    result = await operation(registry);
+    if (write) await chrome.storage.local.set({ [registryStorageKey]: registry });
+  };
+  const queued = registryWrite.then(run, run);
+  registryWrite = queued.catch(() => undefined);
+  await queued;
+  return result;
+}
+
+async function handleRegistryCommand(message: import("../shared/registry-messaging").RegistryCommand): Promise<RegistryResponse> {
+  try {
+    switch (message.action) {
+      case "ensure-website":
+        return { ok: true, site: await withRegistry((registry) => ensureWebsite(registry, message.origin), true) };
+      case "list-sites":
+        return { ok: true, sites: await withRegistry((registry) => [...registry.sites].sort((a, b) => b.updatedAt - a.updatedAt)) };
+      case "list-events":
+        return { ok: true, events: await withRegistry((registry) => listEvents(registry, message.siteId)) };
+      case "create-local-project":
+        return { ok: true, site: await withRegistry((registry) => createLocalProject(registry, message.origin, message.label.trim().slice(0, 120)), true) };
+      case "upsert-event":
+        return { ok: true, event: await withRegistry((registry) => upsertEvent(registry, message.siteId, message.event), true) };
+      case "find-archived-event":
+        return { ok: true, event: await withRegistry((registry) => findArchivedEvent(registry, message.siteId, message.fingerprint)) };
+      case "commit-exorcised":
+        return { ok: true, event: await withRegistry((registry) => commitExorcised(registry, message.siteId, message.event), true) };
+      case "save-diagnosis":
+        return { ok: true, event: await withRegistry((registry) => saveDiagnosis(registry, message.siteId, message.eventId, message.diagnosis), true) };
+      case "mark-exorcised":
+        return { ok: true, event: await withRegistry((registry) => markExorcised(registry, message.siteId, message.eventId), true) };
+      case "clear-site":
+        await withRegistry((registry) => clearSite(registry, message.siteId), true);
+        return { ok: true };
+      case "clear-all":
+        await withRegistry((registry) => clearAll(registry), true);
+        return { ok: true };
+    }
+  } catch {
+    return { ok: false, error: "Could not update the persistent error registry." };
+  }
+}
 
 function isBridgeAcknowledgement(value: unknown): boolean {
   return !!value && typeof value === "object" && (value as { kind?: unknown }).kind === "haunted-runtime-bridge-ack";
