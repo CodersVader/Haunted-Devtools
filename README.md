@@ -121,17 +121,37 @@ Open one of these pages, then open Chrome DevTools and select **Haunted DevTools
 
 Each lab is deterministic and works offline after Node dependencies and any selected Ollama model are already installed.
 
-## Demo previews
-
-The demo pages below give contributors deterministic ways to generate errors. A capture of the actual DevTools panel is still pending; the recorded walkthrough shows the panel flow in the meantime.
-
-![The static Cursed Website demo](docs/screenshots/cursed-website.png)
-
-![The React Cursed App demo](docs/screenshots/react-cursed-app.png)
-
 ## Product walkthrough
 
-[Watch the recorded walkthrough: trigger an error, inspect its local diagnosis, and follow the original panel flow.](docs/media/haunted-devtools-demo.mp4)
+[Watch the two-minute walkthrough: configure a local model, trigger failures, inspect an AI diagnosis, and browse the archive.](docs/media/haunted-devtools-walkthrough.mp4)
+
+## Product screenshots
+
+### Configure a local model
+
+Choose a supported Ollama model and ghost voice before collecting diagnoses. The panel communicates only with the local Ollama service.
+
+![AI settings for a local project and model](docs/screenshots/panel-ai-settings.png)
+
+Once started, the selected model remains warmed in Ollama while the DevTools visit is active.
+
+![A local model is installed, started, and ready to diagnose](docs/screenshots/panel-model-ready.png)
+
+### Inspect an incident
+
+New browser failures are grouped into a case file, queued for the local model, and then shown with evidence and a practical suggested fix.
+
+![A runtime error is being read by the local model](docs/screenshots/panel-diagnosis-reading.png)
+
+![A completed local diagnosis with cause, evidence, and suggested fix](docs/screenshots/panel-diagnosis-complete.png)
+
+### Follow errors over time
+
+The archive retains exorcised case files by site, while the live feed highlights current failures and previously fixed errors that have returned.
+
+![The saved website archive with a diagnosed incident](docs/screenshots/panel-website-archive.png)
+
+![The live feed with grouped active and resurrected incidents](docs/screenshots/panel-live-feed.png)
 
 ## Why local, open-weight AI
 
@@ -155,12 +175,10 @@ Haunted DevTools is designed to be local-first:
 - Chrome's own console output is not mirrored line-for-line; the extension captures browser runtime errors and unhandled rejections through a main-world bridge.
 - The extension must be reloaded after rebuilding, and the inspected page may need a refresh after an extension reload so content scripts attach again.
 - Local diagnosis quality and speed depend on the selected model and available local hardware.
-- A panel screenshot for the README is pending; use the recorded walkthrough to see the current panel experience.
 
 ## Release checklist
 
 - [ ] **Pending:** Add a top-level `LICENSE` file after the project owner confirms the intended license text.
-- [ ] **Pending:** Add a current screenshot of the Live feed and archived case-file views.
 
 ## Verification
 
