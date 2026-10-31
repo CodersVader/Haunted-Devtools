@@ -1,4 +1,4 @@
-import type { DebugEvent } from "./events";
+import type { DebugEvent } from './events';
 
 export class SessionEventStore {
   private readonly eventsByFingerprint = new Map<string, DebugEvent>();
@@ -17,14 +17,19 @@ export class SessionEventStore {
       occurrences: existing.occurrences + 1,
       timestamp: Math.max(existing.timestamp, event.timestamp),
       firstSeenAt: existing.firstSeenAt ?? existing.timestamp,
-      lastSeenAt: Math.max(existing.lastSeenAt ?? existing.timestamp, event.lastSeenAt ?? event.timestamp),
+      lastSeenAt: Math.max(
+        existing.lastSeenAt ?? existing.timestamp,
+        event.lastSeenAt ?? event.timestamp,
+      ),
     };
     this.eventsByFingerprint.set(updated.fingerprint, updated);
     return updated;
   }
 
   list(): DebugEvent[] {
-    return [...this.eventsByFingerprint.values()].sort((left, right) => right.timestamp - left.timestamp);
+    return [...this.eventsByFingerprint.values()].sort(
+      (left, right) => right.timestamp - left.timestamp,
+    );
   }
 
   getByFingerprint(fingerprint: string): DebugEvent | undefined {
@@ -32,7 +37,9 @@ export class SessionEventStore {
   }
 
   getById(id: string): DebugEvent | undefined {
-    return [...this.eventsByFingerprint.values()].find((event) => event.id === id);
+    return [...this.eventsByFingerprint.values()].find(
+      (event) => event.id === id,
+    );
   }
 
   update(event: DebugEvent): DebugEvent | null {
